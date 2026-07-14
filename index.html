@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Qwixx</title>
+<style>
+  :root {
+    --red: #d3242a;
+    --yellow: #f4c400;
+    --green: #3f8f3f;
+    --blue: #1e5fa8;
+    --paper: #f2ead9;
+    --paper-dark: #e5d9bd;
+    --ink: #201a12;
+    --line: #b9ab86;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #2b2620;
+    color: var(--ink);
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    overscroll-behavior: none;
+    user-select: none;
+  }
+  #app { min-height: 100%; display: flex; flex-direction: column; }
+
+  /* ---------- LOBBY ---------- */
+  .lobby {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding: 24px; gap: 18px; background: var(--paper);
+  }
+  .lobby h1 {
+    font-size: 42px; letter-spacing: 2px; margin: 0 0 4px;
+    color: var(--ink); font-weight: 900;
+  }
+  .lobby h1 span:nth-child(1){color:var(--red)}
+  .lobby h1 span:nth-child(2){color:var(--yellow)}
+  .lobby h1 span:nth-child(3){color:var(--green)}
+  .lobby h1 span:nth-child(4){color:var(--blue)}
+  .lobby-card {
+    background: #fff; border: 3px solid var(--ink); border-radius: 10px;
+    padding: 20px; width: 100%; max-width: 360px; box-shadow: 4px 4px 0 var(--ink);
+  }
+  .lobby-card h2 { margin: 0 0 12px; font-size: 15px; text-transform: uppercase; letter-spacing: 1px; }
+  .lobby-card input {
+    width: 100%; padding: 12px; font-size: 17px; border: 2px solid var(--ink);
+    border-radius: 6px; margin-bottom: 10px; font-family: inherit;
+  }
+  .lobby-card input:focus { outline: 3px solid var(--blue); }
+  .btn {
+    display: block; width: 100%; padding: 13px; font-size: 16px; font-weight: 700;
+    border: 2px solid var(--ink); border-radius: 6px; background: var(--ink); color: #fff;
+    cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .btn:active { transform: translateY(1px); }
+  .btn.secondary { background: #fff; color: var(--ink); }
+  .btn.red { background: var(--red); }
+  .btn:disabled { opacity: 0.4; }
+  .divider { text-align: center; color: #8a7f66; font-size: 12px; margin: 14px 0; text-transform: uppercase; letter-spacing: 2px; }
+  .err { color: var(--red); font-size: 13px; margin-top: 8px; min-height: 16px; }
+
+  /* ---------- WAITING ROOM ---------- */
+  .waiting { flex: 1; background: var(--paper); display:flex; flex-direction:column; align-items:center; padding: 30px 20px; }
+  .room-code { font-size: 46px; font-weight: 900; letter-spacing: 8px; margin: 6px 0 20px; }
+  .plist { width: 100%; max-width: 360px; }
+  .prow { display:flex; align-items:center; gap:10px; background:#fff; border:2px solid var(--ink); border-radius:8px; padding:10px 14px; margin-bottom:8px; font-weight:700;}
+  .dot { width:12px; height:12px; border-radius:50%; background: var(--green); }
+  .dot.you { background: var(--blue); }
+
+  /* ---------- GAME HEADER ---------- */
+  .topbar {
+    background: var(--ink); color: #fff; padding: 10px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 13px; letter-spacing: 0.5px;
+  }
+  .topbar .turn-msg { font-weight: 700; font-size: 14px; }
+  .topbar .room-tag { opacity: 0.6; font-size: 11px; }
+
+  /* ---------- DICE ---------- */
+  .dice-zone {
+    background: #3a342b; padding: 18px 12px 14px; display:flex; flex-direction:column; align-items:center; gap:10px;
+  }
+  .dice-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .die {
+    width: 46px; height: 46px; border-radius: 9px; background: #fff;
+    display: grid; grid-template-columns: repeat(3,1fr); grid-template-rows: repeat(3,1fr);
+    padding: 6px; box-shadow: 0 3px 0 rgba(0,0,0,0.35); position: relative;
+  }
+  .die.white { background: #fff; }
+  .die.red { background: var(--red); }
+  .die.yellow { background: var(--yellow); }
+  .die.green { background: var(--green); }
+  .die.blue { background: var(--blue); }
+  .pip { border-radius: 50%; align-self: center; justify-self: center; width: 8px; height: 8px; }
+  .die.white .pip, .die.yellow .pip { background: #201a12; }
+  .die.red .pip, .die.green .pip, .die.blue .pip { background: #fff; }
+  .die.rolling { animation: shake 0.1s infinite; }
+  @keyframes shake {
+    0% { transform: rotate(-6deg) translateY(0); }
+    50% { transform: rotate(6deg) translateY(-3px); }
+    100% { transform: rotate(-6deg) translateY(0); }
+  }
+  .roll-btn-wrap { margin-top: 4px; }
+  .roll-hint { color: #cfc6b3; font-size: 12px; text-align: center; }
+
+  /* ---------- STATUS STRIP ---------- */
+  .status-strip {
+    background: #efe6cf; padding: 8px 14px; font-size: 13px; text-align: center;
+    border-bottom: 2px solid var(--line); font-weight: 600; min-height: 34px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+  }
+  .status-strip .skip-btn {
+    padding: 6px 12px; font-size: 12px; border: 2px solid var(--ink); border-radius: 5px;
+    background: #fff; font-weight: 700; text-transform: uppercase; cursor: pointer;
+  }
+
+  /* ---------- SCORECARDS ---------- */
+  .sheets { flex: 1; overflow-y: auto; background: var(--paper); padding: 10px 10px 30px; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; padding: 8px 4px; }
+  .tab {
+    flex: 0 0 auto; padding: 8px 14px; border-radius: 20px; border: 2px solid var(--ink);
+    font-size: 13px; font-weight: 700; background: #fff; white-space: nowrap; cursor: pointer;
+  }
+  .tab.active { background: var(--ink); color: #fff; }
+  .tab.turn-indicator::after { content: ' \25CF'; color: var(--red); }
+
+  .sheet {
+    background: #fff; border: 3px solid var(--ink); border-radius: 10px; margin: 8px 4px 16px;
+    box-shadow: 4px 4px 0 var(--ink); overflow: hidden;
+  }
+  .sheet-name { padding: 8px 12px; font-weight: 800; font-size: 14px; border-bottom: 2px solid var(--ink); display:flex; justify-content:space-between; align-items:center;}
+  .sheet-name .badge { font-size: 10px; background: var(--ink); color:#fff; padding:2px 8px; border-radius: 10px; text-transform: uppercase; }
+
+  .row-line { display: flex; align-items: center; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+  .row-line:last-of-type { border-bottom: none; }
+  .row-label {
+    width: 14px; font-weight: 900; font-size: 12px; color: #fff; writing-mode: vertical-rl;
+    text-orientation: mixed; text-align: center; padding: 4px 0; border-radius: 3px; margin-right: 4px;
+  }
+  .row-line.red .row-label { background: var(--red); }
+  .row-line.yellow .row-label { background: var(--yellow); color: var(--ink) !important; }
+  .row-line.green .row-label { background: var(--green); }
+  .row-line.blue .row-label { background: var(--blue); }
+
+  .cells { display: flex; gap: 2px; flex: 1; }
+  .cell {
+    flex: 1; aspect-ratio: 1; min-width: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; border-radius: 3px; position: relative; border: 1.5px solid var(--line);
+    background: #fdfaf1;
+  }
+  .row-line.red .cell, .row-line.yellow .cell { }
+  .cell.marked { background: var(--ink); color: #fff; }
+  .row-line.red .cell.marked { background: var(--red); }
+  .row-line.yellow .cell.marked { background: var(--yellow); color: var(--ink); }
+  .row-line.green .cell.marked { background: var(--green); }
+  .row-line.blue .cell.marked { background: var(--blue); }
+  .cell.locked-out { opacity: 0.25; }
+  .cell.lock { font-size: 14px; }
+  .cell.selectable {
+    box-shadow: 0 0 0 3px rgba(30,95,168,0.9) inset;
+    cursor: pointer;
+  }
+  .cell.selectable::after { content: ''; }
+  .cell.disabled-tap { cursor: default; }
+  .lockicon { width: 60%; }
+
+  .penalty-line { display: flex; align-items: center; padding: 8px 6px; gap: 6px; }
+  .penalty-label { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; margin-right: 4px; }
+  .pbox {
+    width: 26px; height: 26px; border: 2px solid var(--ink); border-radius: 4px; display:flex;
+    align-items:center; justify-content:center; font-size: 11px; font-weight:800; background:#fdfaf1;
+  }
+  .pbox.marked { background: var(--ink); color: #fff; }
+  .pbox.selectable { box-shadow: 0 0 0 3px rgba(211,36,42,0.9) inset; cursor: pointer; }
+  .score-line { padding: 8px 12px; font-size: 12px; font-weight: 700; background: var(--paper-dark); display:flex; justify-content: space-between; }
+
+  .toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 30px;
+    font-size: 13px; font-weight: 600; z-index: 999; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    max-width: 90%; text-align:center;
+  }
+
+  .end-screen { flex:1; background: var(--paper); padding: 24px; display:flex; flex-direction:column; align-items:center; gap:14px;}
+  .end-screen h2 { font-size: 26px; margin: 4px 0; }
+  .final-row { width:100%; max-width: 380px; background:#fff; border:2px solid var(--ink); border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; font-weight:700; margin-bottom:6px;}
+  .final-row.winner { background: var(--yellow); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+(function(){
+
+/* ====================== CONSTANTS ====================== */
+const COLORS = ['red','yellow','green','blue'];
+const ASCEND = [2,3,4,5,6,7,8,9,10,11,12];
+const DESCEND = [12,11,10,9,8,7,6,5,4,3,2];
+const ROW_SEQ = { red: ASCEND, yellow: ASCEND, green: DESCEND, blue: DESCEND };
+const POINTS = [0,1,3,6,10,15,21,28,36,45,55,66,78];
+const MAX_PLAYERS = 5;
+const POLL_MS = 1500;
+
+/* ====================== STATE ====================== */
+let local = {
+  screen: 'lobby', // lobby | waiting | playing | ended
+  roomCode: null,
+  mySeat: null,
+  myName: null,
+  activeTab: null,
+  pollTimer: null,
+  lastVersion: -1,
+  rollAnimTimer: null,
+  isRollingAnim: false,
+  animDiceValues: null,
+  toastMsg: null,
+  toastTimer: null,
+  pendingCellSelection: null,
+};
+
+/* ====================== UTIL ====================== */
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function roomKey(code){ return 'qwixx-room-' + code; }
+function randCode(){
+  const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  let c = '';
+  for (let i=0;i<4;i++) c += letters[Math.floor(Math.random()*letters.length)];
+  return c;
+}
+function rollDie(){ return 1 + Math.floor(Math.random()*6); }
+function showToast(msg, ms){
+  local.toastMsg = msg;
+  render();
+  clearTimeout(local.toastTimer);
+  local.toastTimer = setTimeout(()=>{ local.toastMsg = null; render(); }, ms||2200);
+}
+
+async function readRoom(code){
+  try {
+    const res = await window.storage.get(roomKey(code), true);
+    return res ? JSON.parse(res.value) : null;
+  } catch(e){ return null; }
+}
+async function writeRoom(code, state){
+  try {
+    await window.storage.set(roomKey(code), JSON.stringify(state), true);
+    return true;
+  } catch(e){ return false; }
+}
+
+/* Optimistic mutate-with-retry: fetch latest, apply fn, write, verify no race by re-reading version we expect */
+async function mutateRoom(code, fn){
+  for (let attempt=0; attempt<4; attempt++){
+    const current = await readRoom(code);
+    if (!current) return null;
+    const before = current.version;
+    const draft = JSON.parse(JSON.stringify(current));
+    const result = fn(draft);
+    if (result === false) return current; // fn aborted, no-op
+    draft.version = before + 1;
+    // re-check nobody else wrote in the meantime
+    const check = await readRoom(code);
+    if (!check || check.version !== before){
+      // someone else wrote first; retry loop
+      await new Promise(r=>setTimeout(r, 150 + attempt*150));
+      continue;
+    }
+    await writeRoom(code, draft);
+    return draft;
+  }
+  showToast("Sync conflict — retrying…");
+  return await readRoom(code);
+}
+
+/* ====================== GAME LOGIC ====================== */
+function emptySheet(){
+  return {
+    marks: { red: [], yellow: [], green: [], blue: [] }, // arrays of marked numbers, in order
+    locked: { red: false, yellow: false, green: false, blue: false },
+    penalties: 0
+  };
+}
+
+function rowIndexOf(color, num){ return ROW_SEQ[color].indexOf(num); }
+
+function nextAvailableIndex(sheet, color){
+  const marks = sheet.marks[color];
+  if (marks.length === 0) return 0;
+  const lastNum = marks[marks.length-1];
+  return rowIndexOf(color, lastNum) + 1;
+}
+
+// Can this player mark `num` in `color` row right now?
+function canMarkNumber(sheet, color, num){
+  if (sheet.locked[color]) return false;
+  const seq = ROW_SEQ[color];
+  const idx = seq.indexOf(num);
+  if (idx === -1) return false;
+  const nextIdx = nextAvailableIndex(sheet, color);
+  return idx >= nextIdx;
+}
+
+function canMarkLock(sheet, color){
+  if (sheet.locked[color]) return false;
+  const seq = ROW_SEQ[color];
+  const lastNum = seq[seq.length-1];
+  const marks = sheet.marks[color];
+  const hasLast = marks.includes(lastNum);
+  return hasLast && marks.length >= 5;
+}
+
+// apply a mark of a regular number
+function applyMark(sheet, color, num){
+  sheet.marks[color].push(num);
+}
+function applyLock(sheet, color){
+  sheet.locked[color] = true;
+}
+
+function countLockedRows(sheet){
+  return COLORS.filter(c=>sheet.locked[c]).length;
+}
+
+function scoreForRow(sheet, color){
+  let count = sheet.marks[color].length;
+  if (sheet.locked[color]) count += 1;
+  return POINTS[Math.min(count,12)];
+}
+function totalScore(sheet){
+  let s = 0;
+  COLORS.forEach(c => { s += scoreForRow(sheet, c); });
+  s -= sheet.penalties * 5;
+  return s;
+}
+
+/* Determine valid white-sum cells for a player: sum of the two white dice, any row not locked, any col reachable */
+function validWhiteMoves(sheet, dice){
+  if (!dice) return {};
+  const sum = dice.w1 + dice.w2;
+  const out = {};
+  COLORS.forEach(color=>{
+    if (canMarkNumber(sheet, color, sum)) out[color] = sum;
+  });
+  return out;
+}
+
+/* Determine valid colored-combo cells for active player: white+color die, per row matching color */
+function validColorMoves(sheet, dice){
+  if (!dice) return {};
+  const out = {};
+  COLORS.forEach(color=>{
+    const dieVal = dice[color];
+    const opt1 = dice.w1 + dieVal;
+    const opt2 = dice.w2 + dieVal;
+    const candidates = new Set();
+    if (canMarkNumber(sheet, color, opt1)) candidates.add(opt1);
+    if (canMarkNumber(sheet, color, opt2)) candidates.add(opt2);
+    if (candidates.size) out[color] = Array.from(candidates);
+  });
+  return out;
+}
+
+function connectedSeats(room){
+  return room.players.filter(p=>p).map(p=>p.seat);
+}
+
+/* Check + apply end-game conditions; returns true if game ended */
+function checkEndGame(room){
+  const lockedRowsGlobal = COLORS.filter(color => room.players.some(p => p && p.sheet.locked[color])).length;
+  const anyFourPenalty = room.players.some(p => p && p.sheet.penalties >= 4);
+  if (lockedRowsGlobal >= 2 || anyFourPenalty){
+    room.phase = 'ended';
+    return true;
+  }
+  return false;
+}
+
+function advanceTurn(room){
+  const seats = room.players.filter(p=>p).map(p=>p.seat).sort((a,b)=>a-b);
+  const curIdx = seats.indexOf(room.activeSeat);
+  const next = seats[(curIdx+1) % seats.length];
+  room.activeSeat = next;
+  room.dice = null;
+  room.turnPhase = 'idle';
+  room.whiteDecisions = {};
+  room.colorDecision = null;
+  room.activeTookMove = false;
+}
+
+/* ====================== ROOM CREATE / JOIN ====================== */
+async function createRoom(name){
+  const code = randCode();
+  const room = {
+    version: 0,
+    phase: 'waiting', // waiting | playing | ended
+    createdAt: Date.now(),
+    players: [ { seat: 0, name: name, sheet: emptySheet() } ],
+    activeSeat: 0,
+    dice: null,
+    turnPhase: 'idle',
+    whiteDecisions: {},
+    colorDecision: null,
+    activeTookMove: false,
+    log: []
+  };
+  await writeRoom(code, room);
+  local.roomCode = code;
+  local.mySeat = 0;
+  local.myName = name;
+  local.screen = 'waiting';
+  local.activeTab = 0;
+  startPolling();
+  render();
+}
+
+async function joinRoom(code, name){
+  code = code.trim().toUpperCase();
+  const room = await readRoom(code);
+  if (!room){
+    showToast("Room not found. Check the code.");
+    return;
+  }
+  // try to find existing seat with same name to "rejoin"
+  let existingSeat = room.players.findIndex(p => p && p.name.toLowerCase() === name.trim().toLowerCase());
+  if (existingSeat !== -1){
+    local.roomCode = code;
+    local.mySeat = existingSeat;
+    local.myName = name;
+    local.screen = room.phase === 'waiting' ? 'waiting' : (room.phase === 'ended' ? 'ended' : 'playing');
+    local.activeTab = existingSeat;
+    startPolling();
+    render();
+    return;
+  }
+  if (room.phase !== 'waiting'){
+    showToast("Game already in progress — can't join as a new player.");
+    return;
+  }
+  if (room.players.filter(p=>p).length >= MAX_PLAYERS){
+    showToast("Room is full (5 players max).");
+    return;
+  }
+  const seat = room.players.length;
+  const updated = await mutateRoom(code, (draft)=>{
+    draft.players.push({ seat, name: name.trim(), sheet: emptySheet() });
+  });
+  local.roomCode = code;
+  local.mySeat = seat;
+  local.myName = name;
+  local.screen = 'waiting';
+  local.activeTab = seat;
+  startPolling();
+  render();
+}
+
+async function startGame(){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (draft.players.filter(p=>p).length < 2) return false;
+    draft.phase = 'playing';
+    draft.activeSeat = 0;
+  });
+  local.screen = 'playing';
+  render();
+}
+
+/* ====================== POLLING ====================== */
+function startPolling(){
+  if (local.pollTimer) clearInterval(local.pollTimer);
+  local.pollTimer = setInterval(pollOnce, POLL_MS);
+  pollOnce();
+}
+async function pollOnce(){
+  if (!local.roomCode) return;
+  const room = await readRoom(local.roomCode);
+  if (!room) return;
+  if (room.version !== local.lastVersion){
+    local.lastVersion = room.version;
+    local._room = room;
+    if (room.phase === 'waiting') local.screen = 'waiting';
+    else if (room.phase === 'playing') local.screen = 'playing';
+    else if (room.phase === 'ended') local.screen = 'ended';
+    render();
+  }
+}
+
+/* ====================== PLAYER ACTIONS ====================== */
+async function rollDice(){
+  // animate locally first
+  local.isRollingAnim = true;
+  render();
+  let ticks = 0;
+  local.rollAnimTimer = setInterval(()=>{
+    local.animDiceValues = { w1: rollDie(), w2: rollDie(), red: rollDie(), yellow: rollDie(), green: rollDie(), blue: rollDie() };
+    ticks++;
+    render();
+    if (ticks >= 9){
+      clearInterval(local.rollAnimTimer);
+      finalizeRoll();
+    }
+  }, 90);
+}
+
+async function finalizeRoll(){
+  const dice = { w1: rollDie(), w2: rollDie(), red: rollDie(), yellow: rollDie(), green: rollDie(), blue: rollDie() };
+  await mutateRoom(local.roomCode, (draft)=>{
+    draft.dice = dice;
+    draft.turnPhase = 'white-pending';
+    draft.whiteDecisions = {};
+    draft.colorDecision = null;
+    draft.activeTookMove = false;
+  });
+  local.isRollingAnim = false;
+  local.animDiceValues = null;
+  render();
+}
+
+async function takeWhiteMove(color, num){
+  await mutateRoom(local.roomCode, (draft)=>{
+    const p = draft.players[local.mySeat];
+    if (!p || draft.turnPhase !== 'white-pending') return false;
+    if (draft.whiteDecisions[local.mySeat]) return false; // already decided
+    if (!canMarkNumber(p.sheet, color, num)) return false;
+    applyMark(p.sheet, color, num);
+    draft.whiteDecisions[local.mySeat] = 'taken';
+    if (local.mySeat === draft.activeSeat) draft.activeTookMove = true;
+    maybeAdvancePhase(draft);
+  });
+  render();
+}
+
+async function skipWhiteMove(){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (draft.turnPhase !== 'white-pending') return false;
+    if (draft.whiteDecisions[local.mySeat]) return false;
+    draft.whiteDecisions[local.mySeat] = 'skipped';
+    maybeAdvancePhase(draft);
+  });
+  render();
+}
+
+function maybeAdvancePhase(draft){
+  const seats = draft.players.filter(p=>p).map(p=>p.seat);
+  const allDecided = seats.every(s => draft.whiteDecisions[s]);
+  if (allDecided){
+    draft.turnPhase = 'color-pending';
+  }
+}
+
+async function takeColorMove(color, num){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (draft.turnPhase !== 'color-pending') return false;
+    if (local.mySeat !== draft.activeSeat) return false;
+    if (draft.colorDecision) return false;
+    const p = draft.players[local.mySeat];
+    if (!canMarkNumber(p.sheet, color, num)) return false;
+    applyMark(p.sheet, color, num);
+    draft.colorDecision = 'taken';
+    draft.activeTookMove = true;
+    finishTurn(draft);
+  });
+  render();
+}
+
+async function skipColorMove(){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (draft.turnPhase !== 'color-pending') return false;
+    if (local.mySeat !== draft.activeSeat) return false;
+    if (draft.colorDecision) return false;
+    draft.colorDecision = 'skipped';
+    finishTurn(draft);
+  });
+  render();
+}
+
+async function takeLock(color){
+  await mutateRoom(local.roomCode, (draft)=>{
+    const p = draft.players[local.mySeat];
+    if (!p) return false;
+    if (!canMarkLock(p.sheet, color)) return false;
+    // lock can be taken during white phase (if you marked via white sum being the last number) or color phase
+    applyLock(p.sheet, color);
+    checkEndGame(draft);
+  });
+  render();
+}
+
+async function takePenalty(){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (local.mySeat !== draft.activeSeat) return false;
+    if (draft.turnPhase !== 'color-pending' && draft.turnPhase !== 'penalty-pending') return false;
+    if (draft.colorDecision) return false;
+    const p = draft.players[local.mySeat];
+    p.sheet.penalties = Math.min(4, p.sheet.penalties + 1);
+    draft.colorDecision = 'skipped';
+    checkEndGame(draft);
+    if (draft.phase !== 'ended') finishTurn(draft);
+  });
+  render();
+}
+
+function finishTurn(draft){
+  if (checkEndGame(draft)) return;
+  advanceTurn(draft);
+}
+
+/* Voluntary penalty availability: active player may always choose to take a penalty instead of any move,
+   even if moves are available - handled by a dedicated button. */
+async function activeVoluntaryPenalty(){
+  await mutateRoom(local.roomCode, (draft)=>{
+    if (local.mySeat !== draft.activeSeat) return false;
+    if (draft.turnPhase !== 'color-pending') return false;
+    if (draft.colorDecision) return false;
+    const p = draft.players[local.mySeat];
+    p.sheet.penalties = Math.min(4, p.sheet.penalties + 1);
+    draft.colorDecision = 'skipped';
+    if (!checkEndGame(draft)) finishTurn(draft);
+  });
+  render();
+}
+
+/* ====================== RENDER ====================== */
+function el(html){
+  const d = document.createElement('div');
+  d.innerHTML = html;
+  return d.firstElementChild;
+}
+
+function pipPattern(n){
+  // returns array of 9 booleans for 3x3 grid pip positions
+  const layouts = {
+    1: [0,0,0, 0,1,0, 0,0,0],
+    2: [1,0,0, 0,0,0, 0,0,1],
+    3: [1,0,0, 0,1,0, 0,0,1],
+    4: [1,0,1, 0,0,0, 1,0,1],
+    5: [1,0,1, 0,1,0, 1,0,1],
+    6: [1,0,1, 1,0,1, 1,0,1]
+  };
+  return layouts[n] || layouts[1];
+}
+function dieHtml(cls, val){
+  const pips = pipPattern(val);
+  let inner = '';
+  for (let i=0;i<9;i++){ inner += pips[i] ? '<div class="pip"></div>' : '<div></div>'; }
+  return `<div class="die ${cls}${local.isRollingAnim ? ' rolling' : ''}">${inner}</div>`;
+}
+
+function renderLobby(){
+  const wrap = el(`<div class="lobby">
+    <h1><span>Q</span><span>W</span><span>I</span><span>X</span>X</h1>
+    <div class="lobby-card">
+      <h2>Create a room</h2>
+      <input id="create-name" placeholder="Your name" maxlength="16" />
+      <button class="btn" id="create-btn">Create Room</button>
+    </div>
+    <div class="divider">— or —</div>
+    <div class="lobby-card">
+      <h2>Join a room</h2>
+      <input id="join-code" placeholder="Room code" maxlength="4" style="text-transform:uppercase;" />
+      <input id="join-name" placeholder="Your name" maxlength="16" />
+      <button class="btn secondary" id="join-btn">Join Room</button>
+      <div class="err" id="join-err"></div>
+    </div>
+  </div>`);
+  wrap.querySelector('#create-btn').onclick = ()=>{
+    const name = wrap.querySelector('#create-name').value.trim();
+    if (!name) { showToast("Enter your name first."); return; }
+    createRoom(name);
+  };
+  wrap.querySelector('#join-btn').onclick = ()=>{
+    const code = wrap.querySelector('#join-code').value.trim();
+    const name = wrap.querySelector('#join-name').value.trim();
+    if (!code || !name) { wrap.querySelector('#join-err').textContent = "Enter both a room code and your name."; return; }
+    joinRoom(code, name);
+  };
+  return wrap;
+}
+
+function renderWaiting(){
+  const room = local._room;
+  if (!room) return el(`<div class="waiting"><p>Loading room…</p></div>`);
+  const wrap = el(`<div class="waiting">
+    <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#8a7f66;margin-top:10px;">Room code</div>
+    <div class="room-code">${local.roomCode}</div>
+    <div class="plist" id="plist"></div>
+    <div style="max-width:360px;width:100%;margin-top:10px;">
+      <button class="btn" id="start-btn" ${room.players.filter(p=>p).length < 2 ? 'disabled' : ''}>Start Game</button>
+      <div style="font-size:12px;color:#8a7f66;text-align:center;margin-top:8px;">${room.players.filter(p=>p).length < 2 ? 'Need at least 2 players' : room.players.filter(p=>p).length + ' players ready'}</div>
+    </div>
+  </div>`);
+  const plist = wrap.querySelector('#plist');
+  room.players.filter(p=>p).forEach(p=>{
+    const row = el(`<div class="prow"><div class="dot${p.seat===local.mySeat?' you':''}"></div><div>${p.name}${p.seat===local.mySeat?' (you)':''}</div></div>`);
+    plist.appendChild(row);
+  });
+  wrap.querySelector('#start-btn').onclick = startGame;
+  return wrap;
+}
+
+function rowLabelChar(color){ return {red:'R',yellow:'Y',green:'G',blue:'B'}[color]; }
+
+function renderSheet(room, seat, isMine){
+  const player = room.players[seat];
+  if (!player) return el('<div></div>');
+  const dice = room.dice;
+  const isActive = room.activeSeat === seat;
+  const turnPhase = room.turnPhase;
+
+  // determine which cells are selectable for THIS displayed sheet, for the CURRENT viewer (local.mySeat)
+  let selectableWhite = {}, selectableColor = {};
+  const viewerIsThisSheet = isMine;
+  if (dice && viewerIsThisSheet){
+    if (turnPhase === 'white-pending' && !room.whiteDecisions[local.mySeat]){
+      selectableWhite = validWhiteMoves(player.sheet, dice);
+    }
+    if (turnPhase === 'color-pending' && local.mySeat === room.activeSeat && !room.colorDecision){
+      selectableColor = validColorMoves(player.sheet, dice);
+    }
+  }
+
+  const sheetDiv = document.createElement('div');
+  sheetDiv.className = 'sheet';
+  sheetDiv.innerHTML = `<div class="sheet-name"><span>${player.name}${isMine?' (you)':''}</span>${isActive?'<span class="badge">Rolling</span>':''}</div>`;
+
+  COLORS.forEach(color=>{
+    const seq = ROW_SEQ[color];
+    const marks = player.sheet.marks[color];
+    const lastMarkedIdx = marks.length ? rowIndexOf(color, marks[marks.length-1]) : -1;
+    const rowLine = document.createElement('div');
+    rowLine.className = 'row-line ' + color;
+    rowLine.innerHTML = `<div class="row-label">${rowLabelChar(color)}</div>`;
+    const cellsWrap = document.createElement('div');
+    cellsWrap.className = 'cells';
+    seq.forEach((num, idx)=>{
+      const marked = marks.includes(num);
+      const isPast = idx <= lastMarkedIdx && !marked; // skipped-over, now dead
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      if (marked) cell.className += ' marked';
+      if (isPast) cell.className += ' locked-out';
+      cell.textContent = num;
+      let selectable = false;
+      if (selectableWhite[color] === num && !marked) selectable = true;
+      if (selectableColor[color] && selectableColor[color].includes(num) && !marked) selectable = true;
+      if (selectable){
+        cell.className += ' selectable';
+        cell.onclick = ()=>{
+          if (turnPhase === 'white-pending') takeWhiteMove(color, num);
+          else if (turnPhase === 'color-pending') takeColorMove(color, num);
+        };
+      }
+      cellsWrap.appendChild(cell);
+    });
+    // lock cell
+    const lockCell = document.createElement('div');
+    lockCell.className = 'cell lock';
+    lockCell.innerHTML = player.sheet.locked[color] ? '&#128274;' : '&#128275;';
+    if (player.sheet.locked[color]) lockCell.className += ' marked';
+    else if (!canMarkLock(player.sheet, color)) lockCell.className += ' locked-out';
+    if (viewerIsThisSheet && !player.sheet.locked[color] && canMarkLock(player.sheet, color) &&
+        ((turnPhase==='white-pending' && !room.whiteDecisions[local.mySeat]) || (turnPhase==='color-pending' && local.mySeat===room.activeSeat && !room.colorDecision))){
+      lockCell.className += ' selectable';
+      lockCell.onclick = ()=> takeLock(color);
+    }
+    cellsWrap.appendChild(lockCell);
+    rowLine.appendChild(cellsWrap);
+    sheetDiv.appendChild(rowLine);
+  });
+
+  // penalties
+  const penLine = document.createElement('div');
+  penLine.className = 'penalty-line';
+  penLine.innerHTML = `<div class="penalty-label">Penalty (-5)</div>`;
+  for (let i=0;i<4;i++){
+    const box = document.createElement('div');
+    box.className = 'pbox';
+    if (i < player.sheet.penalties) box.className += ' marked';
+    box.textContent = i < player.sheet.penalties ? '\u2717' : '';
+    penLine.appendChild(box);
+  }
+  sheetDiv.appendChild(penLine);
+
+  const scoreLine = document.createElement('div');
+  scoreLine.className = 'score-line';
+  scoreLine.innerHTML = `<span>Locks: ${countLockedRows(player.sheet)}/4</span><span>Score: ${totalScore(player.sheet)}</span>`;
+  sheetDiv.appendChild(scoreLine);
+
+  return sheetDiv;
+}
+
+function statusMessage(room){
+  const active = room.players[room.activeSeat];
+  const activeName = active ? active.name : '?';
+  if (room.turnPhase === 'idle'){
+    if (room.activeSeat === local.mySeat) return { text: "Your turn — tap Roll Dice below.", showSkip:false };
+    return { text: `Waiting for ${activeName} to roll…`, showSkip:false };
+  }
+  if (room.turnPhase === 'white-pending'){
+    const decided = room.whiteDecisions[local.mySeat];
+    if (decided) return { text: `Waiting on other players' white-dice decision…`, showSkip:false };
+    const dice = room.dice;
+    const sum = dice.w1+dice.w2;
+    return { text: `White dice total ${sum}. Tap a highlighted cell on YOUR sheet, or skip.`, showSkip:true, skipFn: skipWhiteMove };
+  }
+  if (room.turnPhase === 'color-pending'){
+    if (local.mySeat !== room.activeSeat) return { text: `${activeName} is choosing a color move…`, showSkip:false };
+    if (room.colorDecision) return { text: `Move locked in — advancing…`, showSkip:false };
+    return { text: `Your color move: tap a highlighted cell, or take a penalty.`, showSkip:true, skipFn: activeVoluntaryPenalty, skipLabel: 'Take Penalty' };
+  }
+  return { text: '', showSkip:false };
+}
+
+function renderPlaying(){
+  const room = local._room;
+  if (!room) return el(`<div><p style="padding:20px;">Loading…</p></div>`);
+  if (local.activeTab === null) local.activeTab = local.mySeat;
+
+  const wrap = document.createElement('div');
+  wrap.style.display='flex'; wrap.style.flexDirection='column'; wrap.style.flex='1';
+
+  // topbar
+  const activePlayer = room.players[room.activeSeat];
+  const top = el(`<div class="topbar">
+    <div class="turn-msg">${activePlayer ? (activePlayer.seat===local.mySeat ? "Your turn" : activePlayer.name + "'s turn") : ''}</div>
+    <div class="room-tag">ROOM ${local.roomCode}</div>
+  </div>`);
+  wrap.appendChild(top);
+
+  // dice
+  const diceValues = local.isRollingAnim ? local.animDiceValues : room.dice;
+  const diceZone = document.createElement('div');
+  diceZone.className = 'dice-zone';
+  if (diceValues){
+    diceZone.innerHTML = `<div class="dice-row">
+      ${dieHtml('white', diceValues.w1)}
+      ${dieHtml('white', diceValues.w2)}
+      ${dieHtml('red', diceValues.red)}
+      ${dieHtml('yellow', diceValues.yellow)}
+      ${dieHtml('green', diceValues.green)}
+      ${dieHtml('blue', diceValues.blue)}
+    </div>`;
+  } else {
+    diceZone.innerHTML = `<div class="roll-hint">Dice not rolled yet</div>`;
+  }
+  if (!local.isRollingAnim && room.turnPhase === 'idle' && room.activeSeat === local.mySeat){
+    const btnWrap = document.createElement('div');
+    btnWrap.className = 'roll-btn-wrap';
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = 'Roll Dice';
+    btn.onclick = rollDice;
+    btnWrap.appendChild(btn);
+    diceZone.appendChild(btnWrap);
+  }
+  wrap.appendChild(diceZone);
+
+  // status strip
+  const status = statusMessage(room);
+  const statusDiv = document.createElement('div');
+  statusDiv.className = 'status-strip';
+  statusDiv.innerHTML = `<span>${status.text}</span>`;
+  if (status.showSkip){
+    const skipBtn = document.createElement('button');
+    skipBtn.className = 'skip-btn';
+    skipBtn.textContent = status.skipLabel || 'Skip';
+    skipBtn.onclick = status.skipFn;
+    statusDiv.appendChild(skipBtn);
+  }
+  wrap.appendChild(statusDiv);
+
+  // tabs
+  const tabsDiv = document.createElement('div');
+  tabsDiv.className = 'tabs';
+  room.players.filter(p=>p).forEach(p=>{
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (local.activeTab === p.seat ? ' active' : '') + (room.activeSeat === p.seat ? ' turn-indicator' : '');
+    tab.textContent = p.seat === local.mySeat ? p.name + ' (you)' : p.name;
+    tab.onclick = ()=>{ local.activeTab = p.seat; render(); };
+    tabsDiv.appendChild(tab);
+  });
+  wrap.appendChild(tabsDiv);
+
+  // sheets scroll area — show active tab's sheet
+  const sheetsDiv = document.createElement('div');
+  sheetsDiv.className = 'sheets';
+  const seatToShow = local.activeTab;
+  sheetsDiv.appendChild(renderSheet(room, seatToShow, seatToShow === local.mySeat));
+  wrap.appendChild(sheetsDiv);
+
+  return wrap;
+}
+
+function renderEnded(){
+  const room = local._room;
+  if (!room) return el('<div></div>');
+  const results = room.players.filter(p=>p).map(p=>({ name: p.name, score: totalScore(p.sheet) }));
+  results.sort((a,b)=>b.score-a.score);
+  const wrap = el(`<div class="end-screen">
+    <h2>Game Over</h2>
+    <div id="results" style="width:100%;max-width:380px;"></div>
+  </div>`);
+  const resDiv = wrap.querySelector('#results');
+  results.forEach((r,i)=>{
+    const row = document.createElement('div');
+    row.className = 'final-row' + (i===0 ? ' winner':'');
+    row.innerHTML = `<span>${i+1}. ${r.name}</span><span>${r.score} pts</span>`;
+    resDiv.appendChild(row);
+  });
+  return wrap;
+}
+
+function render(){
+  const app = document.getElementById('app');
+  app.innerHTML = '';
+  let content;
+  if (local.screen === 'lobby') content = renderLobby();
+  else if (local.screen === 'waiting') content = renderWaiting();
+  else if (local.screen === 'playing') content = renderPlaying();
+  else if (local.screen === 'ended') content = renderEnded();
+  else content = el('<div></div>');
+  app.appendChild(content);
+
+  if (local.toastMsg){
+    const t = document.createElement('div');
+    t.className = 'toast';
+    t.textContent = local.toastMsg;
+    app.appendChild(t);
+  }
+}
+
+render();
+})();
+</script>
+</body>
+</html>
