@@ -202,8 +202,6 @@
 // >>> FILL THESE IN <<<
 // 1) firebaseConfig: Firebase Console → Project Settings → General → "Your apps" → Web app → the config object shown there.
 // 2) RECAPTCHA_SITE_KEY: Firebase Console → App Check → your web app → reCAPTCHA v3 site key.
-
-// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyAf54kPD3R5GjawJLsJmYpfxk_6U5MNG6o",
   authDomain: "qwixx-game-d079e.firebaseapp.com",
@@ -211,7 +209,6 @@ const firebaseConfig = {
   projectId: "qwixx-game-d079e",
   appId: "1:473046761435:web:f781c4bac8edd1fb2b71fe"
 };
-  
 const RECAPTCHA_SITE_KEY = "6LfevVItAAAAAI5kaHs97_89DEXbHg2KBtGqA14e";
 
 const FIREBASE_DB_URL = firebaseConfig.databaseURL;
@@ -286,13 +283,36 @@ function showToast(msg, ms){
   local.toastTimer = setTimeout(()=>{ local.toastMsg = null; render(); }, ms||2200);
 }
 
+// Firebase Realtime Database does NOT store empty arrays/objects — a field like
+// marks:{red:[],yellow:[],green:[],blue:[]} at all-empty gets stripped entirely on write,
+// so reads can come back missing structure the game expects. Rebuild any missing pieces here.
+function normalizeRoom(room){
+  if (!room) return room;
+  if (!room.players) room.players = [];
+  room.players = room.players.map(p=>{
+    if (!p) return p;
+    if (!p.sheet) p.sheet = emptySheet();
+    if (!p.sheet.marks) p.sheet.marks = {};
+    COLORS.forEach(c=>{ if (!p.sheet.marks[c]) p.sheet.marks[c] = []; });
+    if (!p.sheet.locked) p.sheet.locked = {};
+    COLORS.forEach(c=>{ if (p.sheet.locked[c] === undefined) p.sheet.locked[c] = false; });
+    if (p.sheet.penalties === undefined) p.sheet.penalties = 0;
+    return p;
+  });
+  if (!room.whiteDecisions) room.whiteDecisions = {};
+  if (room.colorDecision === undefined) room.colorDecision = null;
+  if (room.dice === undefined) room.dice = null;
+  if (!room.log) room.log = [];
+  return room;
+}
+
 async function readRoom(code){
   try {
     const authHeaders = await getAppCheckHeader();
     const res = await fetch(`${FIREBASE_DB_URL}/${roomKey(code)}.json`, { headers: authHeaders });
     if (!res.ok) return null;
     const data = await res.json();
-    return data || null; // Firebase returns the JSON object directly (already parsed)
+    return data ? normalizeRoom(data) : null;
   } catch(e){ return null; }
 }
 async function writeRoom(code, state){
