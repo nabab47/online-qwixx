@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Qwixx</title>
+<!-- Firebase SDK (compat build, no bundler needed) + App Check -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check-compat.js"></script>
 <style>
   :root {
     --red: #d3242a;
@@ -196,6 +199,51 @@
 (function(){
 
 /* ====================== CONSTANTS ====================== */
+// >>> FILL THESE IN <<<
+// 1) firebaseConfig: Firebase Console → Project Settings → General → "Your apps" → Web app → the config object shown there.
+// 2) RECAPTCHA_SITE_KEY: Firebase Console → App Check → your web app → reCAPTCHA v3 site key.
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyAf54kPD3R5GjawJLsJmYpfxk_6U5MNG6o",
+  authDomain: "qwixx-game-d079e.firebaseapp.com",
+  databaseURL: "https://qwixx-game-d079e-default-rtdb.firebaseio.com",
+  projectId: "qwixx-game-d079e",
+  appId: "1:473046761435:web:f781c4bac8edd1fb2b71fe"
+};
+  
+const RECAPTCHA_SITE_KEY = "6LfevVItAAAAAI5kaHs97_89DEXbHg2KBtGqA14e";
+
+const FIREBASE_DB_URL = firebaseConfig.databaseURL;
+
+let appCheckInstance = null;
+let configIsFilledIn = firebaseConfig.apiKey.indexOf('PASTE_') !== 0 &&
+                        firebaseConfig.databaseURL.indexOf('PASTE_') !== 0 &&
+                        RECAPTCHA_SITE_KEY.indexOf('PASTE_') !== 0;
+
+function initFirebase(){
+  if (!configIsFilledIn) return;
+  try {
+    firebase.initializeApp(firebaseConfig);
+    appCheckInstance = firebase.appCheck();
+    appCheckInstance.activate(RECAPTCHA_SITE_KEY, true); // true = auto-refresh tokens
+  } catch(e){
+    console.error('Firebase/App Check init failed', e);
+  }
+}
+
+// Fetch a fresh App Check token to attach to REST calls. Falls back to no header if unavailable
+// (requests will simply be rejected by Firebase once enforcement is turned on).
+async function getAppCheckHeader(){
+  if (!appCheckInstance) return {};
+  try {
+    const result = await appCheckInstance.getToken(false);
+    return { 'X-Firebase-AppCheck': result.token };
+  } catch(e){
+    return {};
+  }
+}
+
 const COLORS = ['red','yellow','green','blue'];
 const ASCEND = [2,3,4,5,6,7,8,9,10,11,12];
 const DESCEND = [12,11,10,9,8,7,6,5,4,3,2];
@@ -240,14 +288,22 @@ function showToast(msg, ms){
 
 async function readRoom(code){
   try {
-    const res = await window.storage.get(roomKey(code), true);
-    return res ? JSON.parse(res.value) : null;
+    const authHeaders = await getAppCheckHeader();
+    const res = await fetch(`${FIREBASE_DB_URL}/${roomKey(code)}.json`, { headers: authHeaders });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data || null; // Firebase returns the JSON object directly (already parsed)
   } catch(e){ return null; }
 }
 async function writeRoom(code, state){
   try {
-    await window.storage.set(roomKey(code), JSON.stringify(state), true);
-    return true;
+    const authHeaders = await getAppCheckHeader();
+    const res = await fetch(`${FIREBASE_DB_URL}/${roomKey(code)}.json`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify(state)
+    });
+    return res.ok;
   } catch(e){ return false; }
 }
 
@@ -931,6 +987,11 @@ function render(){
 }
 
 render();
+initFirebase();
+
+if (!configIsFilledIn){
+  showToast("⚠️ Firebase config / reCAPTCHA key not set yet — edit the constants at the top of the script.", 6000);
+}
 })();
 </script>
 </body>
