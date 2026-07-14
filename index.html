@@ -883,7 +883,12 @@ function statusMessage(room){
   if (room.turnPhase === 'color-pending'){
     if (local.mySeat !== room.activeSeat) return { text: `${activeName} is choosing a color move…`, showSkip:false };
     if (room.colorDecision) return { text: `Move locked in — advancing…`, showSkip:false };
-    return { text: `Your color move: tap a highlighted cell, or take a penalty.`, showSkip:true, skipFn: activeVoluntaryPenalty, skipLabel: 'Take Penalty' };
+    if (room.activeTookMove){
+      // Already marked something this turn (via the white move) — skipping the color move is free.
+      return { text: `Your color move: tap a highlighted cell, or skip — no penalty since you already marked a number this turn.`, showSkip:true, skipFn: skipColorMove, skipLabel: 'Skip' };
+    }
+    // Took nothing yet this turn — skipping now means the turn ends with zero marks, which costs a penalty.
+    return { text: `Your color move: tap a highlighted cell, or take a penalty (you haven't marked anything yet this turn).`, showSkip:true, skipFn: activeVoluntaryPenalty, skipLabel: 'Take Penalty' };
   }
   return { text: '', showSkip:false };
 }
