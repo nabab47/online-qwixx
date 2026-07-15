@@ -129,6 +129,17 @@
   .tab.active { background: var(--ink); color: #fff; }
   .tab.turn-indicator::after { content: ' \25CF'; color: var(--red); }
 
+  .accordion { display: flex; flex-direction: column; gap: 8px; padding: 4px; }
+  .accordion-section { border: 3px solid var(--ink); border-radius: 10px; overflow: hidden; background: #fff; box-shadow: 4px 4px 0 var(--ink); }
+  .accordion-header {
+    padding: 12px 14px; display: flex; justify-content: space-between; align-items: center;
+    font-weight: 800; font-size: 14px; cursor: pointer; background: var(--paper-dark);
+  }
+  .accordion-header.turn-indicator { background: #f4dfa0; }
+  .accordion-header .accordion-meta { font-size: 12px; font-weight: 700; color: #5a5240; display: flex; align-items: center; gap: 6px; }
+  .accordion-body { border-top: 2px solid var(--ink); }
+  .accordion-body .sheet { border: none; border-radius: 0; box-shadow: none; margin: 0; }
+
   .sheet {
     background: #fff; border: 3px solid var(--ink); border-radius: 10px; margin: 8px 4px 16px;
     box-shadow: 4px 4px 0 var(--ink); overflow: hidden;
@@ -424,6 +435,10 @@ function validWhiteMoves(sheet, dice){
 }
 
 /* Determine valid colored-combo cells for active player: white+color die, per row matching color */
+// HOUSE RULE: the active player may mark the colored die's own face value directly
+// in that row (no white die needed), in addition to the standard white+color combos.
+// Still only one color-phase move total per turn — this just adds more valid numbers
+// to choose from for that single move.
 function validColorMoves(sheet, dice){
   if (!dice) return {};
   const out = {};
@@ -434,6 +449,7 @@ function validColorMoves(sheet, dice){
     const candidates = new Set();
     if (canMarkNumber(sheet, color, opt1)) candidates.add(opt1);
     if (canMarkNumber(sheet, color, opt2)) candidates.add(opt2);
+    if (canMarkNumber(sheet, color, dieVal)) candidates.add(dieVal); // house rule: colored die alone
     if (candidates.size) out[color] = Array.from(candidates);
   });
   return out;
@@ -933,23 +949,40 @@ function renderPlaying(){
   }
   wrap.appendChild(statusDiv);
 
-  // tabs
-  const tabsDiv = document.createElement('div');
-  tabsDiv.className = 'tabs';
-  room.players.filter(p=>p).forEach(p=>{
-    const tab = document.createElement('div');
-    tab.className = 'tab' + (local.activeTab === p.seat ? ' active' : '') + (room.activeSeat === p.seat ? ' turn-indicator' : '');
-    tab.textContent = p.seat === local.mySeat ? p.name + ' (you)' : p.name;
-    tab.onclick = ()=>{ local.activeTab = p.seat; render(); };
-    tabsDiv.appendChild(tab);
-  });
-  wrap.appendChild(tabsDiv);
+  // accordion: each player's card as an expandable dropdown; own card open by default
+  if (!local.expandedSeats) local.expandedSeats = new Set([local.mySeat]);
 
-  // sheets scroll area — show active tab's sheet
+  const accordionDiv = document.createElement('div');
+  accordionDiv.className = 'accordion';
+  room.players.filter(p=>p).forEach(p=>{
+    const isExpanded = local.expandedSeats.has(p.seat);
+    const section = document.createElement('div');
+    section.className = 'accordion-section';
+
+    const header = document.createElement('div');
+    header.className = 'accordion-header' + (room.activeSeat === p.seat ? ' turn-indicator' : '');
+    const scoreSummary = totalScore(p.sheet);
+    header.innerHTML = `<span>${p.seat === local.mySeat ? p.name + ' (you)' : p.name}</span>
+      <span class="accordion-meta">Score: ${scoreSummary} &nbsp; ${isExpanded ? '&#9650;' : '&#9660;'}</span>`;
+    header.onclick = ()=>{
+      if (local.expandedSeats.has(p.seat)) local.expandedSeats.delete(p.seat);
+      else local.expandedSeats.add(p.seat);
+      render();
+    };
+    section.appendChild(header);
+
+    if (isExpanded){
+      const body = document.createElement('div');
+      body.className = 'accordion-body';
+      body.appendChild(renderSheet(room, p.seat, p.seat === local.mySeat));
+      section.appendChild(body);
+    }
+    accordionDiv.appendChild(section);
+  });
+
   const sheetsDiv = document.createElement('div');
   sheetsDiv.className = 'sheets';
-  const seatToShow = local.activeTab;
-  sheetsDiv.appendChild(renderSheet(room, seatToShow, seatToShow === local.mySeat));
+  sheetsDiv.appendChild(accordionDiv);
   wrap.appendChild(sheetsDiv);
 
   return wrap;
