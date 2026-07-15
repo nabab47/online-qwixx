@@ -593,15 +593,29 @@ async function finalizeRoll(){
   render();
 }
 
+// Marking a row's last number (12 for red/yellow, 2 for green/blue) should immediately
+// also lock the row in the same action if the row now has 5+ marks — no separate tap needed,
+// since locking is always beneficial and Qwixx doesn't make players opt out of it.
+function applyMarkWithAutoLock(sheet, color, num){
+  applyMark(sheet, color, num);
+  if (canMarkLock(sheet, color)){
+    applyLock(sheet, color);
+  }
+}
+
 async function takeWhiteMove(color, num){
   await mutateRoom(local.roomCode, (draft)=>{
     const p = draft.players[local.mySeat];
     if (!p || draft.turnPhase !== 'white-pending') return false;
     if (draft.whiteDecisions[local.mySeat]) return false; // already decided
     if (!canMarkNumber(p.sheet, color, num)) return false;
-    applyMark(p.sheet, color, num);
+    applyMarkWithAutoLock(p.sheet, color, num);
     draft.whiteDecisions[local.mySeat] = 'taken';
     if (local.mySeat === draft.activeSeat) draft.activeTookMove = true;
+    // NOTE: end-game is intentionally NOT checked here. Per Qwixx rules, every player
+    // finishes acting on this turn's roll (including the active player's color-combo
+    // move) before the game evaluates whether it's over — so multiple players/rows
+    // can lock in the same turn, potentially pushing the total locked-row count past 2.
     maybeAdvancePhase(draft);
   });
   render();
@@ -632,7 +646,7 @@ async function takeColorMove(color, num){
     if (draft.colorDecision) return false;
     const p = draft.players[local.mySeat];
     if (!canMarkNumber(p.sheet, color, num)) return false;
-    applyMark(p.sheet, color, num);
+    applyMarkWithAutoLock(p.sheet, color, num);
     draft.colorDecision = 'taken';
     draft.activeTookMove = true;
     finishTurn(draft);
@@ -651,39 +665,12 @@ async function skipColorMove(){
   render();
 }
 
-async function takeLock(color){
-  await mutateRoom(local.roomCode, (draft)=>{
-    const p = draft.players[local.mySeat];
-    if (!p) return false;
-    if (!canMarkLock(p.sheet, color)) return false;
-    // lock can be taken during white phase (if you marked via white sum being the last number) or color phase
-    applyLock(p.sheet, color);
-    checkEndGame(draft);
-  });
-  render();
-}
-
-async function takePenalty(){
-  await mutateRoom(local.roomCode, (draft)=>{
-    if (local.mySeat !== draft.activeSeat) return false;
-    if (draft.turnPhase !== 'color-pending' && draft.turnPhase !== 'penalty-pending') return false;
-    if (draft.colorDecision) return false;
-    const p = draft.players[local.mySeat];
-    p.sheet.penalties = Math.min(4, p.sheet.penalties + 1);
-    draft.colorDecision = 'skipped';
-    checkEndGame(draft);
-    if (draft.phase !== 'ended') finishTurn(draft);
-  });
-  render();
-}
-
 function finishTurn(draft){
   if (checkEndGame(draft)) return;
   advanceTurn(draft);
 }
 
-/* Voluntary penalty availability: active player may always choose to take a penalty instead of any move,
-   even if moves are available - handled by a dedicated button. */
+/* Voluntary penalty: active player takes a penalty because they made zero marks this turn. */
 async function activeVoluntaryPenalty(){
   await mutateRoom(local.roomCode, (draft)=>{
     if (local.mySeat !== draft.activeSeat) return false;
@@ -692,7 +679,7 @@ async function activeVoluntaryPenalty(){
     const p = draft.players[local.mySeat];
     p.sheet.penalties = Math.min(4, p.sheet.penalties + 1);
     draft.colorDecision = 'skipped';
-    if (!checkEndGame(draft)) finishTurn(draft);
+    finishTurn(draft); // finishTurn itself performs the single end-of-turn end-game check
   });
   render();
 }
@@ -834,12 +821,7 @@ function renderSheet(room, seat, isMine){
     lockCell.className = 'cell lock';
     lockCell.innerHTML = player.sheet.locked[color] ? '&#128274;' : '&#128275;';
     if (player.sheet.locked[color]) lockCell.className += ' marked';
-    else if (!canMarkLock(player.sheet, color)) lockCell.className += ' locked-out';
-    if (viewerIsThisSheet && !player.sheet.locked[color] && canMarkLock(player.sheet, color) &&
-        ((turnPhase==='white-pending' && !room.whiteDecisions[local.mySeat]) || (turnPhase==='color-pending' && local.mySeat===room.activeSeat && !room.colorDecision))){
-      lockCell.className += ' selectable';
-      lockCell.onclick = ()=> takeLock(color);
-    }
+    else lockCell.className += ' locked-out'; // lock is never separately tappable — it applies automatically
     cellsWrap.appendChild(lockCell);
     rowLine.appendChild(cellsWrap);
     sheetDiv.appendChild(rowLine);
