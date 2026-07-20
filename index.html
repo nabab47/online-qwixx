@@ -314,6 +314,18 @@ function normalizeRoom(room){
   if (room.colorDecision === undefined) room.colorDecision = null;
   if (room.dice === undefined) room.dice = null;
   if (!room.log) room.log = [];
+  if (room.turnNumber === undefined || room.turnNumber === null) room.turnNumber = 0;
+  if (!room.rowLockTurn) room.rowLockTurn = {};
+  COLORS.forEach(c=>{
+    if (room.rowLockTurn[c] === undefined) room.rowLockTurn[c] = null;
+    // Migration safety: if a row was already locked by someone before this fix existed,
+    // but we have no record of which turn, treat it as locked in the past (sentinel -1,
+    // guaranteed never to equal the current turnNumber) so it's correctly fully dead
+    // going forward rather than silently reopened for everyone else.
+    if (room.rowLockTurn[c] === null && room.players.some(p=>p && p.sheet.locked[c])){
+      room.rowLockTurn[c] = -1;
+    }
+  });
   return room;
 }
 
@@ -380,14 +392,35 @@ function nextAvailableIndex(sheet, color){
   return rowIndexOf(color, lastNum) + 1;
 }
 
-// Can this player mark `num` in `color` row right now?
-function canMarkNumber(sheet, color, num){
+// Was `color` ever locked by ANYONE, and if so, was it locked in a turn other than the
+// current one? If true, the row is fully dead for a given player attempting num !== last,
+// and dead for num === last unless this is still the same turn the lock first happened
+// (Qwixx explicitly allows multiple players to simultaneously lock the same row within
+// the single turn/action that first locks it — but never in any turn after that).
+function rowIsGloballyDead(room, color, forLastNumberAttempt){
+  if (!room || !room.rowLockTurn) return false;
+  const lockedOnTurn = room.rowLockTurn[color];
+  if (lockedOnTurn === null || lockedOnTurn === undefined) return false; // never locked by anyone yet
+  const sameTurn = lockedOnTurn === room.turnNumber;
+  if (forLastNumberAttempt) return !sameTurn; // last number still allowed this same turn, blocked afterward
+  return true; // any ordinary (non-last) number is blocked forever once anyone has locked the row
+}
+
+// Can this player mark `num` in `color` row right now? `room` is optional — pass it to
+// also enforce the global "row already locked by someone" rule; omitting it only checks
+// this player's own sheet (used in a couple of isolated/legacy contexts).
+function canMarkNumber(sheet, color, num, room){
   if (sheet.locked[color]) return false;
   const seq = ROW_SEQ[color];
   const idx = seq.indexOf(num);
   if (idx === -1) return false;
   const nextIdx = nextAvailableIndex(sheet, color);
-  return idx >= nextIdx;
+  if (idx < nextIdx) return false;
+  if (room){
+    const isLastNum = (num === seq[seq.length-1]);
+    if (rowIsGloballyDead(room, color, isLastNum)) return false;
+  }
+  return true;
 }
 
 function canMarkLock(sheet, color){
@@ -396,7 +429,10 @@ function canMarkLock(sheet, color){
   const lastNum = seq[seq.length-1];
   const marks = sheet.marks[color];
   const hasLast = marks.includes(lastNum);
-  return hasLast && marks.length >= 5;
+  // Official rule: player must have already crossed out at least 5 numbers in the row
+  // BEFORE crossing the rightmost number. The rightmost number itself is then the 6th
+  // mark, so once it's been placed, marks.length must be >= 6 (5 prior + the last one).
+  return hasLast && marks.length >= 6;
 }
 
 // apply a mark of a regular number
@@ -424,12 +460,12 @@ function totalScore(sheet){
 }
 
 /* Determine valid white-sum cells for a player: sum of the two white dice, any row not locked, any col reachable */
-function validWhiteMoves(sheet, dice){
+function validWhiteMoves(sheet, dice, room){
   if (!dice) return {};
   const sum = dice.w1 + dice.w2;
   const out = {};
   COLORS.forEach(color=>{
-    if (canMarkNumber(sheet, color, sum)) out[color] = sum;
+    if (canMarkNumber(sheet, color, sum, room)) out[color] = sum;
   });
   return out;
 }
@@ -439,7 +475,7 @@ function validWhiteMoves(sheet, dice){
 // in that row (no white die needed), in addition to the standard white+color combos.
 // Still only one color-phase move total per turn — this just adds more valid numbers
 // to choose from for that single move.
-function validColorMoves(sheet, dice){
+function validColorMoves(sheet, dice, room){
   if (!dice) return {};
   const out = {};
   COLORS.forEach(color=>{
@@ -447,9 +483,9 @@ function validColorMoves(sheet, dice){
     const opt1 = dice.w1 + dieVal;
     const opt2 = dice.w2 + dieVal;
     const candidates = new Set();
-    if (canMarkNumber(sheet, color, opt1)) candidates.add(opt1);
-    if (canMarkNumber(sheet, color, opt2)) candidates.add(opt2);
-    if (canMarkNumber(sheet, color, dieVal)) candidates.add(dieVal); // house rule: colored die alone
+    if (canMarkNumber(sheet, color, opt1, room)) candidates.add(opt1);
+    if (canMarkNumber(sheet, color, opt2, room)) candidates.add(opt2);
+    if (canMarkNumber(sheet, color, dieVal, room)) candidates.add(dieVal); // house rule: colored die alone
     if (candidates.size) out[color] = Array.from(candidates);
   });
   return out;
@@ -480,6 +516,7 @@ function advanceTurn(room){
   room.whiteDecisions = {};
   room.colorDecision = null;
   room.activeTookMove = false;
+  room.turnNumber = (room.turnNumber || 0) + 1;
 }
 
 /* ====================== ROOM CREATE / JOIN ====================== */
@@ -496,6 +533,8 @@ async function createRoom(name){
     whiteDecisions: {},
     colorDecision: null,
     activeTookMove: false,
+    turnNumber: 0,
+    rowLockTurn: { red: null, yellow: null, green: null, blue: null },
     log: []
   };
   await writeRoom(code, room);
@@ -612,10 +651,15 @@ async function finalizeRoll(){
 // Marking a row's last number (12 for red/yellow, 2 for green/blue) should immediately
 // also lock the row in the same action if the row now has 5+ marks — no separate tap needed,
 // since locking is always beneficial and Qwixx doesn't make players opt out of it.
-function applyMarkWithAutoLock(sheet, color, num){
+// `room` (the draft) is passed so we can record which turn this row first got locked on,
+// which governs the "simultaneous same-turn lock" exception vs. permanently dead afterward.
+function applyMarkWithAutoLock(sheet, color, num, room){
   applyMark(sheet, color, num);
   if (canMarkLock(sheet, color)){
     applyLock(sheet, color);
+    if (room && room.rowLockTurn && (room.rowLockTurn[color] === null || room.rowLockTurn[color] === undefined)){
+      room.rowLockTurn[color] = room.turnNumber || 0;
+    }
   }
 }
 
@@ -624,8 +668,8 @@ async function takeWhiteMove(color, num){
     const p = draft.players[local.mySeat];
     if (!p || draft.turnPhase !== 'white-pending') return false;
     if (draft.whiteDecisions[local.mySeat]) return false; // already decided
-    if (!canMarkNumber(p.sheet, color, num)) return false;
-    applyMarkWithAutoLock(p.sheet, color, num);
+    if (!canMarkNumber(p.sheet, color, num, draft)) return false;
+    applyMarkWithAutoLock(p.sheet, color, num, draft);
     draft.whiteDecisions[local.mySeat] = 'taken';
     if (local.mySeat === draft.activeSeat) draft.activeTookMove = true;
     // NOTE: end-game is intentionally NOT checked here. Per Qwixx rules, every player
@@ -661,8 +705,8 @@ async function takeColorMove(color, num){
     if (local.mySeat !== draft.activeSeat) return false;
     if (draft.colorDecision) return false;
     const p = draft.players[local.mySeat];
-    if (!canMarkNumber(p.sheet, color, num)) return false;
-    applyMarkWithAutoLock(p.sheet, color, num);
+    if (!canMarkNumber(p.sheet, color, num, draft)) return false;
+    applyMarkWithAutoLock(p.sheet, color, num, draft);
     draft.colorDecision = 'taken';
     draft.activeTookMove = true;
     finishTurn(draft);
@@ -792,10 +836,10 @@ function renderSheet(room, seat, isMine){
   const viewerIsThisSheet = isMine;
   if (dice && viewerIsThisSheet){
     if (turnPhase === 'white-pending' && !room.whiteDecisions[local.mySeat]){
-      selectableWhite = validWhiteMoves(player.sheet, dice);
+      selectableWhite = validWhiteMoves(player.sheet, dice, room);
     }
     if (turnPhase === 'color-pending' && local.mySeat === room.activeSeat && !room.colorDecision){
-      selectableColor = validColorMoves(player.sheet, dice);
+      selectableColor = validColorMoves(player.sheet, dice, room);
     }
   }
 
@@ -807,6 +851,10 @@ function renderSheet(room, seat, isMine){
     const seq = ROW_SEQ[color];
     const marks = player.sheet.marks[color];
     const lastMarkedIdx = marks.length ? rowIndexOf(color, marks[marks.length-1]) : -1;
+    // Row is globally dead once anyone has locked it in a past turn (not this one) —
+    // every remaining unmarked cell (before OR after this player's own progress) should
+    // read as unavailable, not just the ones skipped over by this player's own marks.
+    const rowDeadGlobally = rowIsGloballyDead(room, color, false);
     const rowLine = document.createElement('div');
     rowLine.className = 'row-line ' + color;
     rowLine.innerHTML = `<div class="row-label">${rowLabelChar(color)}</div>`;
@@ -815,14 +863,14 @@ function renderSheet(room, seat, isMine){
     seq.forEach((num, idx)=>{
       const marked = marks.includes(num);
       const isPast = idx <= lastMarkedIdx && !marked; // skipped-over, now dead
-      const cell = document.createElement('div');
-      cell.className = 'cell';
-      if (marked) cell.className += ' marked';
-      if (isPast) cell.className += ' locked-out';
-      cell.textContent = num;
       let selectable = false;
       if (selectableWhite[color] === num && !marked) selectable = true;
       if (selectableColor[color] && selectableColor[color].includes(num) && !marked) selectable = true;
+      const cell = document.createElement('div');
+      cell.className = 'cell';
+      if (marked) cell.className += ' marked';
+      if ((isPast || rowDeadGlobally) && !marked && !selectable) cell.className += ' locked-out';
+      cell.textContent = num;
       if (selectable){
         cell.className += ' selectable';
         cell.onclick = ()=>{
@@ -911,15 +959,16 @@ function renderPlaying(){
   const diceValues = local.isRollingAnim ? local.animDiceValues : room.dice;
   const diceZone = document.createElement('div');
   diceZone.className = 'dice-zone';
+  // Once a color's row is locked (by anyone, ever), the rules say that die is removed
+  // from the game entirely — so stop showing it, in both the static roll and the
+  // shake/roll animation.
+  const dieIsRemoved = (color) => room.rowLockTurn && room.rowLockTurn[color] !== null && room.rowLockTurn[color] !== undefined;
   if (diceValues){
-    diceZone.innerHTML = `<div class="dice-row">
-      ${dieHtml('white', diceValues.w1)}
-      ${dieHtml('white', diceValues.w2)}
-      ${dieHtml('red', diceValues.red)}
-      ${dieHtml('yellow', diceValues.yellow)}
-      ${dieHtml('green', diceValues.green)}
-      ${dieHtml('blue', diceValues.blue)}
-    </div>`;
+    let diceHtml = `${dieHtml('white', diceValues.w1)}${dieHtml('white', diceValues.w2)}`;
+    COLORS.forEach(color=>{
+      if (!dieIsRemoved(color)) diceHtml += dieHtml(color, diceValues[color]);
+    });
+    diceZone.innerHTML = `<div class="dice-row">${diceHtml}</div>`;
   } else {
     diceZone.innerHTML = `<div class="roll-hint">Dice not rolled yet</div>`;
   }
