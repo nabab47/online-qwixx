@@ -42,6 +42,10 @@
   .lobby h1 span:nth-child(2){color:var(--yellow)}
   .lobby h1 span:nth-child(3){color:var(--green)}
   .lobby h1 span:nth-child(4){color:var(--blue)}
+  .version-tag {
+    font-size: 11px; font-weight: 700; color: #9a8f72; letter-spacing: 1px;
+    text-transform: uppercase; margin: -10px 0 8px;
+  }
   .lobby-card {
     background: #fff; border: 3px solid var(--ink); border-radius: 10px;
     padding: 20px; width: 100%; max-width: 360px; box-shadow: 4px 4px 0 var(--ink);
@@ -210,6 +214,10 @@
 (function(){
 
 /* ====================== CONSTANTS ====================== */
+// Bump this with every set of shipped changes. Shown on the lobby screen so you can
+// confirm at a glance whether GitHub Pages has actually picked up your latest deploy.
+const GAME_VERSION = "v0.8";
+
 // >>> FILL THESE IN <<<
 // 1) firebaseConfig: Firebase Console → Project Settings → General → "Your apps" → Web app → the config object shown there.
 // 2) RECAPTCHA_SITE_KEY: Firebase Console → App Check → your web app → reCAPTCHA v3 site key.
@@ -773,6 +781,7 @@ function dieHtml(cls, val){
 function renderLobby(){
   const wrap = el(`<div class="lobby">
     <h1><span>Q</span><span>W</span><span>I</span><span>X</span>X</h1>
+    <div class="version-tag">${GAME_VERSION}</div>
     <div class="lobby-card">
       <h2>Create a room</h2>
       <input id="create-name" placeholder="Your name" maxlength="16" />
